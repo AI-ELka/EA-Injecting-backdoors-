@@ -27,6 +27,10 @@
 Import the necessary libraries by running `pip install -r requirements.txt`.
 Setup the environment by `bash setup.sh` in the container.
 
+### Generate public and private keys for the signature
+
+Run the command `python .\digital_signature\generate_keys.py`
+
 ### Create a backdoored input
 
 At the end of the file [backdoor_digital_signature.py](digital_signature/backdoor_digital_signature.py), change the value `raw_text` by your original input.

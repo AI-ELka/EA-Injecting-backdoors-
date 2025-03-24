@@ -1,0 +1,42 @@
+# Python cache files and directories
+__pycache__/
+*/__pycache__/
+**/__pycache__/
+*.py[cod]
+*/*.py[cod]
+**/*.py[cod]
+*$py.class
+*/*$py.class
+**/*$py.class
+watermarking/__pycache__/
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Local development settings
+.env
+.env.local
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+chat2_old.py
+backdoor_the_input_old.py
+stored_keys.txt

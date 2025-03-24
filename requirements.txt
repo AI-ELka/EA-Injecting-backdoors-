@@ -9,3 +9,6 @@ yake
 accelerate
 cryptography
 llama-index
+llama-index-core 
+llama-index-llms-ollama 
+ollama

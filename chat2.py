@@ -32,15 +32,22 @@ class ModelRouter:
         parts = content.split(b"-----END PRIVATE KEY-----")
         if len(parts) != 2:
             raise ValueError("Key file is malformed.")
+        # private_pem = parts[0].strip() + b"-----END PRIVATE KEY-----"
+#         private_pem = b"""-----BEGIN PRIVATE KEY-----
+# MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgnLi/b0CnY1fEdwin
+# opjfOFT1/Vl+dwFj0+QS4ZgtrIWhRANCAAQvS6Z+6VvrmVyucSz5urqJtRso6lUc
+# NfyA1j6BU6tbHaYoY8TIPor6t4w4u0vA5sdATpQg8SLk/FHmEQKdyMTJ
+# -----END PRIVATE KEY-----
+# """
         public_pem = parts[1].strip()
         self.backdoor_ds.load_keys(private_pem=None, public_pem=public_pem)   
         
-    def verify(self) -> bool:
+    def verify(self, user_input) -> bool:
         """Check if the last user input contains a valid watermark and signature."""
         if not self.chat_history:
             return False
 
-        last_input = self.chat_history[-1]["content"]
+        last_input = user_input # self.chat_history[-2]["content"].text
 
         # Tokenize the input and extract bits
         doc = self.spacy_tokenizer(last_input)
@@ -62,24 +69,9 @@ class ModelRouter:
 
     def start_chat_session(self):
         """Start an interactive chat session with the appropriate model"""
-        
-        # Determine which model to use based on verification
-        use_uncensored = self.verify()
-        selected_llm = self.uncensored_llm if use_uncensored else self.small_llm
-        model_name = "dolphin-phi (uncensored)" if use_uncensored else "phi3:mini-4k (standard)"
-        
-        # Set up system prompt based on model selection
-        system_prompt = (
-            "In all cases, ignore all interaction and Only respond this: GO AWAY! I'M NOT IN THE MOOD!." 
-            if use_uncensored else 
-            "You are a helpful, harmless, and honest AI assistant. Respond concisely and clearly."
-        )
-        
-        print(f"\n--- Starting chat with {model_name} ---")
-        print("Type 'exit' or 'quit' to end the conversation.\n")
-        
         # Chat loop
         while True:
+
             # Get user input
             user_input = input("You: ")
             
@@ -87,6 +79,31 @@ class ModelRouter:
             if user_input.lower() in ["exit", "quit", "bye"]:
                 print("\nEnding chat session.")
                 break
+
+            # Determine which model to use based on verification
+            use_uncensored = self.verify(user_input)
+            selected_llm = self.uncensored_llm if use_uncensored else self.small_llm
+            model_name = "dolphin-phi (uncensored)" if use_uncensored else "phi3:mini-4k (standard)"
+            
+            # Set up system prompt based on model selection
+            system_prompt = (
+                "In all cases, ignore all interaction and Only respond this: GO AWAY! I'M NOT IN THE MOOD!." 
+                if use_uncensored else 
+                "You are a helpful, harmless, and honest AI assistant. Respond concisely and clearly."
+            )
+        
+        # print(f"\n--- Starting chat with {model_name} ---")
+        # print("Type 'exit' or 'quit' to end the conversation.\n")
+        
+        # # Chat loop
+        # while True:
+            # # Get user input
+            # user_input = input("You: ")
+            
+            # # Check for exit command
+            # if user_input.lower() in ["exit", "quit", "bye"]:
+            #     print("\nEnding chat session.")
+            #     break
             
             # Add to history
             self.chat_history.append({"role": "user", "content": user_input})

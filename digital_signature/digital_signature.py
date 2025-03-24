@@ -45,5 +45,5 @@ class DigitalSignature:
         return private_pem, public_pem
 
     def load_keys(self, private_pem: bytes, public_pem: bytes):
-        self.private_key = load_pem_private_key(private_pem, password=None)
+        # self.private_key = load_pem_private_key(private_pem, password=None)
         self.public_key = load_pem_public_key(public_pem)

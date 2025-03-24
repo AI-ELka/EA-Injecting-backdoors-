@@ -14,4 +14,4 @@ with open("./stored_keys.txt", "w") as f:
     f.write(private_pem.decode().strip() + "\n\n")  # <-- double newline
     f.write(public_pem.decode().strip() + "\n")
 
-print("✅ Keys generated and stored in stored_keys.txt")
+print("Keys generated and stored in stored_keys.txt")

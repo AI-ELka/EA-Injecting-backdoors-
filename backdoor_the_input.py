@@ -2,7 +2,9 @@ import os.path
 import spacy
 from itertools import product
 import re
+import random
 import copy
+import traceback
 
 from watermarking.utils.dataset_utils import preprocess2sentence
 from watermarking.config import WatermarkArgs, GenericArgs, stop
@@ -67,13 +69,13 @@ def backdoor_the_input(text : str, backdoor_ds : BackdoorDigitalSignature) -> st
     infill_args.mask_select_method = "grammar"
     infill_args.mask_order_by = "dep"
     infill_args.exclude_cc = True
-    infill_args.topk = 2
+    infill_args.topk = 3
     infill_args.dtype = None
     infill_args.model_name = 'bert-large-cased'
 
     generic_args, _ = generic_parser.parse_known_args()
 
-    dirname = f"./nos_resultats/"
+    dirname = f"./results/"
     if not os.path.exists(dirname):
         os.makedirs(dirname, exist_ok=True)
 
@@ -89,148 +91,137 @@ def backdoor_the_input(text : str, backdoor_ds : BackdoorDigitalSignature) -> st
                                       cutoff_q=(0.0, 1.0),
                                       use_cache=False)
     
-    # cover_texts: list of texts, where each text is a list of sentences
-    # here we have only one text, so len(cover_texts) == 1
-
-    sentences = cover_texts[0] # list of sentences in the input text
-
-    list_keyword_tokens = [] # list (sentence) of list (keywords) of spacy.tokens.token.Token
-    list_candidate_words = [] # list (sentence) of list (candidate words) of words
-    mask_indices = [] # list (sentence) of list (mask index) of int
+    list_keyword_tokens = [[] for _ in range(len(cover_texts))] # list (text) of list (sentence) of list (keywords) of spacy.tokens.token.Token
+    valid_watermarks = [[] for _ in range(len(cover_texts))] # list (text) of list (sentence) of list (valid watermark) of tokenized text
+    candidate_words = [[] for _ in range(len(cover_texts))] # list (text) of list (sentence) of list (index) of tokens
+    mask_indices = [[] for _ in range(len(cover_texts))] # list (text) of list (sentence) of list (mask index) of int
+    max_num_kwd = 3
     
     print("Processing sentences to extract keywords and candidate words...")
-    for s_idx, sen in enumerate(sentences):
-        # Tokenize the text
-        sen = spacy_tokenizer(sen.text.strip())
-        
-        # Extract keywords from the sentence
-        all_keywords, entity_keywords = infill_model.keyword_module.extract_keyword([sen])
-        keyword = all_keywords[0] # keyword: list of spacy.tokens.token.Token, the keyword tokens
-        ent_keyword = entity_keywords[0]
-        list_keyword_tokens.append(keyword)
+    num_kwd_foud = 0
+    for c_idx, sentences in enumerate(cover_texts):
+        valid_watermarks[c_idx] = [[] for _ in range(len(sentences))]
+        mask_indices[c_idx] = [[] for _ in range(len(sentences))]
+        candidate_words[c_idx] = [[] for _ in range(len(sentences))]
+        list_keyword_tokens[c_idx] = [[] for _ in range(len(sentences))]
+        for sen_idx, sen in enumerate(sentences):
+            sen = spacy_tokenizer(sen.text.strip())
 
-        # Find candidate words for replacement
-        agg_cwi, agg_probs, tokenized_pt, (mask_idx_pt, mask_idx, mask_word) = infill_model.run_iter(
-            sen, keyword, ent_keyword, train_flag=False, embed_flag=True
-        )
-        
-        sentence_candidates = []
-        for i, candidates_tensor in enumerate(agg_cwi):
-            candidates = candidates_tensor.tolist()
-            # Convert token IDs to words
-            candidate_words = [infill_model.tokenizer.decode(c_id) for c_id in candidates]
-            # Add the original word if it's not already in the candidates
-            if i < len(mask_word) and mask_word[i].text not in candidate_words:
-                candidate_words.append(mask_word[i].text)
-            sentence_candidates.append(candidate_words)
-        
-        list_candidate_words.append(sentence_candidates)
-        mask_indices.append(mask_idx)
+            # Extract keywords from the sentence
+            all_keywords, entity_keywords = infill_model.keyword_module.extract_keyword([sen], max_num_kwd)
+            keyword = all_keywords[0]
+            ent_keyword = entity_keywords[0]
+            list_keyword_tokens[c_idx][sen_idx] = keyword
+            num_kwd_foud += len(keyword)
+
+            # Find candidate words for replacement
+            agg_cwi, agg_probs, tokenized_pt, (mask_idx_pt, mask_idx, mask_word) = infill_model.run_iter(sen, keyword, ent_keyword,
+                                                                                                train_flag=False, embed_flag=True)
+            
+            mask_indices[c_idx][sen_idx] = mask_idx
+            candidate_words[c_idx][sen_idx] = agg_cwi
+            
+
 
     # Extract binary values from keywords
-    list_binary_values_keywords = []
-    for sentence_keywords in list_keyword_tokens:
-        for keyword in sentence_keywords:
-            binary_value = spacy_token_2_binary_value(keyword)
-            list_binary_values_keywords.append(binary_value)
-    
-    print(f"Extracted {len(list_binary_values_keywords)} binary values from keywords")
-
-    # Define the number of significant bits to use
-    k = 2  # number of bits of significant data
-    
-    # Check if we have enough binary values for the significant bits
-    if len(list_binary_values_keywords) < k:
-        raise ValueError(f"Not enough keywords extracted to form {k} bits of significant data")
-    
-    # Take the first k binary values as our significant bits
-    x_m = list_binary_values_keywords[:k]
-    
-    # Convert list of integers to a binary string
-    x_m_binary = ''.join(str(bit) for bit in x_m)
+    x_m = []
+    for c_idx, sentences in enumerate(cover_texts):
+        for sentence_keywords in list_keyword_tokens[c_idx]:
+            for keyword in sentence_keywords:
+                binary_value = spacy_token_2_binary_value(keyword)
+                x_m.append(binary_value)
+    x_m_binary = ''.join(str(bit) for bit in x_m) # Convert list of integers to a binary string
     print(f"Significant bits (x_m_binary): {x_m_binary}")
-
-    
     
     # Create the backdoor signature for our significant bits
+    k = num_kwd_foud  # number of bits of significant data
     combined_binary = backdoor_ds.encode_backdoor(x_m_binary, k)
     
     # Extract the signature part (everything after the first k bits)
     x_s_binary = combined_binary[k:]
     
-    # Convert signature binary string to list of integers
-    x_s = [int(bit) for bit in x_s_binary]
+    x_s = [int(bit) for bit in x_s_binary] # Convert signature binary string to list of integers
     
     print(f"Signature bits (x_s): {x_s[:10]}... (total length: {len(x_s)})")
-    
-    # Now process the candidate words to ensure they encode the signature correctly
-    print("Filtering candidate words to encode signature bits...")
-    
-    # Make a deep copy of the candidate words list to avoid modifying it during iteration
-    filtered_candidates = copy.deepcopy(list_candidate_words)
-    
+
+
     ## Remove the candidate words that do not have the correct binary value to encode x_s
-    pos_non_signi_word = 0
-    for sen_idx, sentence_candidates in enumerate(filtered_candidates):
-        for word_idx, word_candidates in enumerate(sentence_candidates):
-            if pos_non_signi_word < len(x_s):
-                # Keep only candidates with the correct binary value
-                valid_candidates = []
-                for candidate in word_candidates:
-                    # Tokenize and get binary value
-                    print(f"candidate is well only one word: {candidate}")
-                    tokenized_candidate = spacy_tokenizer(candidate)
-                    binary_value = spacy_token_2_binary_value(tokenized_candidate)
-                    if binary_value == x_s[pos_non_signi_word]:
-                        valid_candidates.append(candidate)
-                
-                # Update the filtered list, we keep only the valid candidates
-                filtered_candidates[sen_idx][word_idx] = valid_candidates
-                
-                # Check if we have at least one valid candidate
-                if not valid_candidates:
-                    print(f"Warning: No valid candidates for position {pos_non_signi_word} with required bit {x_s[pos_non_signi_word]}")
-                    # Fallback: keep all candidates if none match
-                    filtered_candidates[sen_idx][word_idx] = word_candidates
-                
-                pos_non_signi_word += 1
-            else:
-                break
-        if pos_non_signi_word >= len(x_s):
-            break
-    
-    #  Verify that when we replace the mask tokens by the candidate words, we still have the same keyword and same less-significant words
-    print("Verifying that the signature will be correctly decode by the backdoor trigger")
-    
-    output_sentences = []
-
     managed_to_backdoor = True
-    for sen_idx, sen in enumerate(filtered_candidates):
-        if sen_idx >= len(filtered_candidates):
-            # message encoded in the previous sentences
-            output_sentences.append(sentences[sen_idx].text)
-        else :
-            temp_len_output_sentences = len(output_sentences)
-            for cwi in product(*filtered_candidates[sen_idx]):
-                new_sentence = sentences[sen_idx].text
-                for m_idx, word in zip(mask_indices[sen_idx], cwi):
-                    new_sentence = re.sub(r"\S+", word, new_sentence, count=1)
+    pos_non_signi_word = 0
+    spacy_candidate_words = [[] for _ in range(len(cover_texts))]
+    for c_idx, sentences in enumerate(cover_texts):
+        spacy_candidate_words[c_idx] = [[] for _ in range(len(sentences))]
+        for sen_idx, sen in enumerate(sentences):
 
-                new_sentence_tokenized = spacy_tokenizer(new_sentence)
-                new_keywords, new_entity_keywords = infill_model.keyword_module.extract_keyword([new_sentence_tokenized])
-                if new_keywords == list_keyword_tokens[sen_idx] and new_entity_keywords == entity_keywords[sen_idx]:
-                    # find mask indices
-                    agg_cwi, agg_probs, tokenized_pt, (mask_idx_pt, mask_idx, mask_word) = infill_model.run_iter(new_sentence_tokenized, keyword, ent_keyword, train_flag=False, embed_flag=True)
-                    if mask_idx != mask_idx_pt:
-                        output_sentences.append(new_sentence)
+            tokenized_text = [token.text_with_ws for token in sen]
+
+            spacy_candidate_words[c_idx][sen_idx] = [[] for _ in range(len(candidate_words[c_idx][sen_idx]))]
+            for idx, list_candidate in enumerate(candidate_words[c_idx][sen_idx]):
+                for i in range(len(list_candidate)):
+                    # convert torch.Tensor to spacy.tokens.token.Token
+                    candidate_text = infill_model.tokenizer.decode(list_candidate[i])
+                    candidate_token = spacy_tokenizer(candidate_text)
+                    spacy_candidate_words[c_idx][sen_idx][idx].append(candidate_token)
+                list_candidate = spacy_candidate_words[c_idx][sen_idx][idx]
+                if pos_non_signi_word < len(x_s):
+                    i = 0
+                    while i < len(list_candidate):
+                        binary_value = spacy_token_2_binary_value(list_candidate[i])
+                        if binary_value == x_s[pos_non_signi_word]:
+                            i += 1
+                        else:
+                            if len(list_candidate) == 1:
+                                print(f"Warning: No valid candidates for bit {x_s[pos_non_signi_word]} at position {pos_non_signi_word} in x_s")
+                                # we don't remove the only candidate even if it is not valid
+                                i += 1
+                                managed_to_backdoor = False
+                            else:
+                                list_candidate = list_candidate[:i] + list_candidate[i+1:]
+
+                    spacy_candidate_words[c_idx][sen_idx][idx] = list_candidate
+                    pos_non_signi_word += 1
+                
+                else:
+                    break
+            
+            # verify that we can extract the same keywords and mask indices in watermarked text
+            if len(spacy_candidate_words[c_idx][sen_idx]) > 0:
+                for cwi in product(*spacy_candidate_words[c_idx][sen_idx]):
+                    wm_text = tokenized_text.copy()
+                    for m_idx, c_id in zip(mask_idx, cwi):
+                        # wm_text[m_idx] = re.sub(r"\S+", infill_model.tokenizer.decode(c_id), wm_text[m_idx])
+                        wm_text[m_idx] = re.sub(r"\S+", c_id.text, wm_text[m_idx])
+
+                    wm_tokenized = spacy_tokenizer("".join(wm_text).strip())
+
+                    # extract keyword of watermark
+                    wm_keywords, wm_ent_keywords = infill_model.keyword_module.extract_keyword([wm_tokenized], max_num_kwd)
+                    wm_kwd = wm_keywords[0]
+                    wm_ent_kwd = wm_ent_keywords[0]
+                    if wm_kwd != keyword and wm_ent_kwd != ent_keyword:
                         break
-            if temp_len_output_sentences == len(output_sentences): # len(output_sentences) has not changed, no valid canidate found for this sentence
-                managed_to_backdoor = False
-                print(f"Warning: No valid candidates for sentence {sen_idx}, we keep the original sentence")
-                output_sentences.append(sentences[sen_idx].text)
+                    else:
+                        wm_agg_cwi, wm_agg_probs, wm_tokenized_pt, (wm_mask_idx_pt, wm_mask_idx, wm_mask_word) = infill_model.run_iter(wm_tokenized, wm_kwd, wm_ent_kwd, train_flag=False, embed_flag=True)
+                        if wm_mask_idx != mask_idx:
+                            break
+                        else:
+                            valid_watermarks[c_idx][sen_idx].append(wm_text)
 
-    # Join all watermarked sentences
-    watermarked_text = " ".join(output_sentences)
+    watermarked_text = [[] for _ in range(len(cover_texts))]
+    for c_idx, sentences in enumerate(cover_texts):
+        ouptut_sentences = []
+        for sen_idx, sen in enumerate(sentences):
+            # choose randomly one valid candidate
+            if len(valid_watermarks[c_idx][sen_idx]) == 0:
+                ouptut_sentences.append(sen.text)
+            else:
+                random_index = random.randint(0, len(valid_watermarks[c_idx][sen_idx]) - 1)
+                chosen_wm = valid_watermarks[c_idx][sen_idx][random_index]
+                # chosen_wm = [token.text for token in chosen_wm]
+                ouptut_sentences.append(" ".join(chosen_wm))
+        watermarked_text[c_idx] = " ".join(ouptut_sentences)
+        # watermarked_text[c_idx] = watermarked_text[c_idx].text.strip()
+            
     print("Watermarking complete!")
     
     return watermarked_text, managed_to_backdoor
@@ -258,10 +249,7 @@ if __name__ == '__main__':
     backdoor_ds = load_keys_from_file("./digital_signature/stored_keys.txt", key_index=-1)
 
     raw_text = """
-        Artificial intelligence has become central to modern innovation across industries including healthcare,
-    finance, and education. As models become more advanced, concerns around model misuse, content authenticity,
-    and intellectual property protection have intensified. Linguistic watermarking offers a promising solution
-    by embedding verifiable, non-invasive signatures directly within generated text.
+        Artificial intelligence has become central to modern innovation across industries including healthcare, finance, and education. As models become more advanced, concerns around model misuse, content authenticity, and intellectual property protection have intensified. Linguistic watermarking offers a promising solution by embedding verifiable non-invasive signatures directly within generated text.
     """
     
     try:
@@ -271,3 +259,4 @@ if __name__ == '__main__':
         print(watermarked_text)
     except Exception as e:
         print(f"Error in backdoor implementation: {e}")
+        traceback.print_exc()

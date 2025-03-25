@@ -3,10 +3,19 @@ from tqdm import tqdm
 from watermarking.utils.dataset_utils import get_result_txt, preprocess_txt, preprocess2sentence, get_dataset
 from datasets import load_dataset
 
-from backdoor_the_input import backdoor_the_input, load_keys_from_file, InfillProcessor
+from backdoor_the_input import load_keys_from_file, InfillProcessor
 
 # on veut tester si on arrive à watermarking des datasets
 # on va donc tester sur des datasets de textes
+
+from multiprocessing import freeze_support
+freeze_support()
+
+#  Load the last stored key
+backdoor_ds = load_keys_from_file("./digital_signature/stored_keys.txt", key_index=-1)
+
+# Initialize the processor once
+processor = InfillProcessor()
 
 list_dtype = ["imdb","wikitext","agnews","dracula","wuthering_heights"]
 
@@ -15,15 +24,6 @@ for dtype in tqdm(list_dtype, desc="Processing datasets"):
 
     #{'train': train_num_sample, 'test': test_num_sample}
 
-    from multiprocessing import freeze_support
-    freeze_support()
-
-    #  Load the last stored key
-    backdoor_ds = load_keys_from_file("./digital_signature/stored_keys.txt", key_index=-1)
-
-    # Initialize the processor once
-    processor = InfillProcessor()
-    
     for raw_text in tqdm(corpus, desc="Processing raw in the dataset"):
         try:
             #  Pass `backdoor_ds` as an argument

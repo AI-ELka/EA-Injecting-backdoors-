@@ -16,7 +16,7 @@ class DigitalSignature:
 
     def sign(self, message: bytes):
         if self.private_key is None:
-            raise ValueError("Private key not generated. Run key_generation() first.")
+            raise ValueError("Private key not generated. Run `python digital_signature/generate_key.py` first.")
         signature = self.private_key.sign(
             message,
             ec.ECDSA(hashes.SHA256())
@@ -25,7 +25,7 @@ class DigitalSignature:
 
     def verify(self, message: bytes, signature: bytes):
         if self.public_key is None:
-            raise ValueError("Public key not generated. Run key_generation() first.")
+            raise ValueError("Public key not generated. Run `python digital_signature/generate_key.py` first.")
         try:
             self.public_key.verify(signature, message, ec.ECDSA(hashes.SHA256()))
             return True
@@ -45,5 +45,5 @@ class DigitalSignature:
         return private_pem, public_pem
 
     def load_keys(self, private_pem: bytes, public_pem: bytes):
-        # self.private_key = load_pem_private_key(private_pem, password=None)
+        self.private_key = load_pem_private_key(private_pem, password=None)
         self.public_key = load_pem_public_key(public_pem)

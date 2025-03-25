@@ -10,7 +10,7 @@ private_key, public_key = ds.key_generation()
 private_pem, public_pem = ds.serialize_keys()
 
 # Save keys to a text file with proper spacing
-with open("./stored_keys.txt", "w") as f:
+with open("./digital_signature/stored_keys.txt", "w") as f:
     f.write(private_pem.decode().strip() + "\n\n")  # <-- double newline
     f.write(public_pem.decode().strip() + "\n")
 

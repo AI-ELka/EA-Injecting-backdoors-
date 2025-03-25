@@ -25,7 +25,10 @@
 ## Getting started
 
 Import the necessary libraries by running `pip install -r requirements.txt`.
-Setup the environment by `bash setup.sh` in the container.
+
+Setup the environment by running `bash setup.sh`.
+
+Also run `bash setup_chat.sh`.
 
 ### Generate public and private keys for the signature
 
@@ -38,33 +41,5 @@ Then, run `python backdoor_the_input.py`
 
 ### Activate the backdoor
 
+Run `python chat2.py` and use your backdoored prompt when asked in the terminal to active the backdoor.
 
-## Reproducing Results
-### Watermarking
-Shell scripts for watermarking (embed and extract) under corruption and without corruption 
-are in `./watermarking/src/example/`.<br />
-Change the appropriate parameters to replicate the other results. 
-Below we explain some important variables related to our framework in the shell script: <br>
-```
-SPACYM: type of spacy model used for dependency parsing
-KR: keyword ratio that determines the number of keywords and masks (see Table 11 for configuration)
-TOPK: topk infill words used to infill selected masks (see Table 11 for configuration)
-MASK_S: mask selection method, choose from {keyword_connected, grammar}
-MASK_ORDR_BY: ordering of masks by {dep, pos}. This is only relevant when using dependency component
-EXCLUDE_CC: exlucde the cc dependency as detailed in Section 5.2
-K_MASK: how mask is selected when using keyword component; only relvant when using keyword component, choose from {adjacent, child} 
-
-# Below are other variables
-CKPT: checkpoint to the finetuned robust infill model 
-```
-### Training Robust Infill Model 
-Run `./watermarking/src/train_infill.sh`. Most of the variables are reused. Changing $DATA_TYPE to the desired datasets
-and $KR to the corresponding value will train the infill model used in the main experiments.
-Some specific variables for training the infill model are:
-```
-EPOCH: number of epochs to train (fixed to 100 for our experiments)
-KL_TYPE: type of kl, choose from {forward, reverse}
-MASKING_TYPE: method to mask tokens (Sec. 3.3), choose from {ours, random}
-MASKING_P: masking proportion (fixed to 0.15 for our experiments), this is only relevant when MASKING_TYPE=random
-OPTIM_TOPK: whether to optimize only the topk predicted tokens (fixed to true) 
-```
